@@ -1993,3 +1993,136 @@ def GSLIB2ndarray_3D(data_file, kcol,nreal, nx, ny, nz):
                     head = next(f)
                     array[ineal][ix] = head.split()[kcol]
     return array, col_name
+
+def ndarray2GSLIB_3D(array, data_file, col_name="Property"):
+    """Convert a 3D numpy ndarray to a GSLIB Geo-EAS file.
+
+    :param array: input 3D ndarray
+    :param data_file: file name for the GSLIB file
+    :param col_name: column name for the property
+    :return: None
+    """
+    
+    dims = len(array.shape)
+
+    with open(data_file, "w") as f:
+        # Write header
+        f.write(data_file + "\n")
+        f.write("1 \n")
+        f.write(col_name + "\n")
+
+        # If 3D array with realizations
+        if dims == 4:
+            nreal, ny, nx, nz = array.shape
+            for ireal in range(nreal):
+                for iz in range(nz):
+                    for iy in range(ny):
+                        for ix in range(nx):
+                            f.write(str(array[ireal, ny - 1 - iy, ix, iz]) + "\n")
+
+        # If 3D array without realizations
+        elif dims == 3:
+            ny, nx, nz = array.shape
+            for iz in range(nz):
+                for iy in range(ny):
+                    for ix in range(nx):
+                        f.write(str(array[ny - 1 - iy, ix, iz]) + "\n")
+
+        else:
+            raise ValueError("Array dimensions not supported. Provide a 3D or 4D ndarray.")
+
+
+
+def cosgsim_3D(nreal, df, xcol, ycol, zcol, vcol, nx, ny, nz, hsiz, vsiz, seed, var,sec, correl, output_file):
+    """Sequential Gaussian simulation, 3D wrapper for sgsim from GSLIB (.exe
+    must be available in PATH or working directory).
+
+    :param nreal: TODO
+    :param df: dataframe
+    :param xcol: TODO
+    :param ycol: TODO
+    :param vcol: TODO
+    :param nx: TODO
+    :param ny: TODO
+    :param hsiz: TODO
+    :param seed: TODO
+    :param var: TODO
+    :param output_file: output file
+    :return: TODO
+    """
+    x = df[xcol]
+    y = df[ycol]
+    z = df[zcol]
+    v = df[vcol]
+    var_min = v.values.min()
+    var_max = v.values.max()
+    df_temp = pd.DataFrame({"X": x, "Y": y, "Z": z, "Var": v})
+    Dataframe2GSLIB("data_temp.dat", df_temp)
+    ndarray2GSLIB_3D(sec, "sec.dat", "sec_dat")
+
+    nug = var["nug"]
+    nst = var["nst"]
+    it1 = var["it1"]
+    cc1 = var["cc1"]
+    azi1 = var["azi1"]
+    dip1 = var["dip1"] 
+    hmax1 = var["hmax1"]
+    hmed1 = var["hmed1"]
+    hmin1 = var["hmin1"]
+    it2 = var["it2"]
+    cc2 = var["cc2"]
+    azi2 = var["azi2"]
+    dip2 = var["dip2"] 
+    hmax2 = var["hmax2"]
+    hmed2 = var["hmed2"]
+    hmin2 = var["hmin2"]
+    max_range = max(hmax1, hmax2)
+    max_range_v = max(hmin1, hmin2) * 10
+    hmn = hsiz * 0.5
+    zmn = vsiz * 0.5
+    hctab = int(max_range / hsiz) * 2 + 1
+
+    with open("sgsim.par", "w") as f:
+        f.write("              Parameters for SGSIM                                         \n")
+        f.write("              ********************                                         \n")
+        f.write("                                                                           \n")
+        f.write("START OF PARAMETER:                                                        \n")
+        f.write("data_temp.dat                 -file with data                              \n")
+        f.write("1  2  3  4  0  0              -  columns for X,Y,Z,vr,wt,sec.var.          \n")
+        f.write("-1.0e21 1.0e21                -  trimming limits                           \n")
+        f.write("1                             -transform the data (0=no, 1=yes)            \n")
+        f.write("none.trn                      -  file for output trans table               \n")
+        f.write("0                             -  consider ref. dist (0=no, 1=yes)          \n")
+        f.write("none.dat                      -  file with ref. dist distribution          \n")
+        f.write("1  0                          -  columns for vr and wt                     \n")
+        f.write(str(var_min) + " " + str(var_max) + "   zmin,zmax(tail extrapolation)       \n")
+        f.write("1   " + str(var_min) + "      -  lower tail option, parameter              \n")
+        f.write("1   " + str(var_max) + "      -  upper tail option, parameter              \n")
+        f.write("0                             -debugging level: 0,1,2,3                    \n")
+        f.write("nonw.dbg                      -file for debugging output                   \n")
+        f.write(str(output_file) + "           -file for simulation output                  \n")
+        f.write(str(nreal) + "                 -number of realizations to generate          \n")
+        f.write(str(nx) + " " + str(hmn) + " " + str(hsiz) + "                              \n")
+        f.write(str(ny) + " " + str(hmn) + " " + str(hsiz) + "                              \n")
+        f.write(str(nz) + " " + str(zmn) + " " + str(vsiz) + "                              \n")
+        f.write(str(seed) + "                  -random number seed                          \n")
+        f.write("0     8                       -min and max original data for sim           \n")
+        f.write("12                            -number of simulated nodes to use            \n")
+        f.write("1                             -assign data to nodes (0=no, 1=yes)          \n")
+        f.write("1     3                       -multiple grid search (0=no, 1=yes),num      \n")
+        f.write("0                             -maximum data per octant (0=not used)        \n")
+        f.write(str(max_range) + " " + str(max_range) +" "+ str(max_range_v) + " -maximum search  (hmax,hmin,vert) \n")
+        f.write(str(azi1) + "   0.0   0.0       -angles for search ellipsoid                 \n")
+        f.write(str(hctab) + " " + str(hctab) + " 1 -size of covariance lookup table        \n")
+        f.write("4 "    + str(correl) +   " 1.0              - ktype: 0=SK,1=OK,2=LVM,3=EXDR,4=COLC        \n")
+        f.write("sec.dat                      -  file with LVM, EXDR, or COLC variable     \n")
+        f.write("1                             -  column for secondary variable             \n")
+        f.write(str(nst) + " " + str(nug) + "  -nst, nugget effect                          \n")
+        f.write(str(it1) + " " + str(cc1) + " " + str(azi1) + "  " + str(dip1) +" 0.0 -it,cc,ang1,ang2,ang3\n")
+        f.write(" " + str(hmax1) + " 	" + str(hmed1) +  "		" + str(hmin1) + "  - a_hmax, a_hmin, a_vert        \n")
+        f.write(str(it2) + " " + str(cc2) + " 	" + str(azi2) + "		" + str(dip2) +" 0.0 -it,cc,ang1,ang2,ang3\n")
+        f.write(" " + str(hmax2) + " " + str(hmed2) +  " " +str(hmin2) + " - a_hmax, a_hmin, a_vert        \n")
+
+    os.system("sgsim.exe sgsim.par")
+    sim_array = GSLIB2ndarray_3D(output_file, 0, nreal, nx, ny, nz)
+    return sim_array[0]
